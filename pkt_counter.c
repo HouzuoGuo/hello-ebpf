@@ -4,14 +4,6 @@
 
 #include <linux/bpf.h>
 #include <linux/if_ether.h>
-/*
-#include <linux/icmp.h>
-#include <linux/icmpv6.h>
-#include <linux/if_packet.h>
-#include <linux/in.h>
-#include <linux/ip.h>
-#include <linux/ipv6.h>
-*/
 #include <linux/types.h>
 
 #include <bpf/bpf_endian.h>
@@ -32,32 +24,50 @@ struct {
 } pkt_size SEC(".maps");
 
 struct {
-  __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+  // __uint(type, BPF_MAP_TYPE_LRU_PERCPU_HASH);
+  __uint(type, BPF_MAP_TYPE_LRU_HASH);
   __type(key, __u32);
   __type(value, __u64);
-  __uint(max_entries, 1);
-} ipv4_count SEC(".maps");
+  __uint(max_entries, 128);
+} src_data_len SEC(".maps");
 
-struct parser {
-  void *pos;
+struct iphdr {
+  __u8 ihl : 4;
+  __u8 version : 4;
+  __u8 tos;
+  __be16 tot_len;
+  __be16 id;
+  __be16 frag_off;
+  __u8 ttl;
+  __u8 protocol;
+  __sum16 check;
+  __be32 saddr;
+  __be32 daddr;
 };
 
-static __always_inline int parse_eth(struct parser *par, void *end,
-                                     struct ethhdr **out) {
-  // dest, src, EtherType (aka size)
-  struct ethhdr *header = par->pos;
-  int size = sizeof(*header);
-  par->pos += size;
-  *out = header;
-  return header->h_proto;
+static __always_inline int parse_addr(struct xdp_md *ctx, __u32 *out_src,
+                                      __u16 *out_len) {
+  void *data = (void *)(long)ctx->data;
+  void *data_end = (void *)(long)ctx->data_end;
+
+  struct ethhdr *eth = data;
+  if ((void *)(eth + 1) > data_end) {
+    return 0;
+  }
+  if (eth->h_proto != bpf_htons(ETH_P_IP)) {
+    return 0;
+  }
+  struct iphdr *ip = (void *)(eth + 1);
+  if ((void *)(ip + 1) > data_end) {
+    return 0;
+  }
+  *out_src = ip->saddr;
+  *out_len = ip->tot_len;
+  return 1;
 }
 
 SEC("xdp")
 int count_packets(struct xdp_md *ctx) {
-  void *data = (void *)(long)ctx->data;
-  void *data_end = (void *)(long)ctx->data_end;
-  struct parser parser;
-  parser.pos = data;
   // Count all packets and sum their lengths.
   __u32 key = 0;
   __u64 *count = bpf_map_lookup_elem(&pkt_count, &key);
@@ -73,16 +83,19 @@ int count_packets(struct xdp_md *ctx) {
     new_size = *size + (ctx->data_end - ctx->data);
   }
   bpf_map_update_elem(&pkt_size, &key, &new_size, BPF_ANY);
-  // Count IPv4 packets.
-  struct ethhdr *eth;
-  if (parse_eth(&parser, data_end, &eth) == bpf_htons(ETH_P_IP)) {
-    __u64 *v4 = bpf_map_lookup_elem(&ipv4_count, &key);
-    __u64 new_v4 = 0;
-    if (v4) {
-      new_v4 = *v4 + 1;
-    }
-    bpf_map_update_elem(&ipv4_count, &key, &new_v4, BPF_ANY);
+
+  __u32 src_ip;
+  __u16 src_len;
+  __u64 new_len = 0;
+  if (!parse_addr(ctx, &src_ip, &src_len)) {
+    return XDP_PASS;
   }
+  __u64 *existing_len = bpf_map_lookup_elem(&src_data_len, &src_ip);
+  new_len += src_len;
+  if (existing_len) {
+    new_len += *existing_len;
+  }
+  bpf_map_update_elem(&src_data_len, &src_ip, &new_len, BPF_ANY);
 
   return XDP_PASS;
 }

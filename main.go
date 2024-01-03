@@ -40,15 +40,23 @@ func main() {
 	for {
 		select {
 		case <-ticker.C:
-			var count, size []uint64
-			if err := objs.PktCount.Lookup(uint32(0), &count); err != nil {
+			var totalPacketCount, totalPacketLen []uint64
+			var srcIP []byte
+			var ipTrafficLen uint64
+
+			if err := objs.PktCount.Lookup(uint32(0), &totalPacketCount); err != nil {
 				log.Fatal(err)
 			}
-			if err = objs.PktSize.Lookup(uint32(0), &size); err != nil {
+			if err = objs.PktSize.Lookup(uint32(0), &totalPacketLen); err != nil {
 				log.Fatal(err)
 			}
-			for cpu := range count {
-				log.Printf("cpu %d: Seen %d packets in %d bytes", cpu, count[cpu], size[cpu])
+			srcTrafficIter := objs.SrcDataLen.Iterate()
+			for srcTrafficIter.Next(&srcIP, &ipTrafficLen) {
+				srcIPAddr := net.IPv4(srcIP[0], srcIP[1], srcIP[2], srcIP[3])
+				log.Printf("source IP %s: %v bytes of traffic", srcIPAddr, ipTrafficLen)
+			}
+			for cpu := range totalPacketCount {
+				log.Printf("cpu %d: Seen %d packets in %d bytes", cpu, totalPacketCount[cpu], totalPacketLen[cpu])
 			}
 		case <-sigInt:
 			return

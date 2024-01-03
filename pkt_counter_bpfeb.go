@@ -60,9 +60,9 @@ type pkt_counterProgramSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type pkt_counterMapSpecs struct {
-	Ipv4Count *ebpf.MapSpec `ebpf:"ipv4_count"`
-	PktCount  *ebpf.MapSpec `ebpf:"pkt_count"`
-	PktSize   *ebpf.MapSpec `ebpf:"pkt_size"`
+	PktCount   *ebpf.MapSpec `ebpf:"pkt_count"`
+	PktSize    *ebpf.MapSpec `ebpf:"pkt_size"`
+	SrcDataLen *ebpf.MapSpec `ebpf:"src_data_len"`
 }
 
 // pkt_counterObjects contains all objects after they have been loaded into the kernel.
@@ -84,16 +84,16 @@ func (o *pkt_counterObjects) Close() error {
 //
 // It can be passed to loadPkt_counterObjects or ebpf.CollectionSpec.LoadAndAssign.
 type pkt_counterMaps struct {
-	Ipv4Count *ebpf.Map `ebpf:"ipv4_count"`
-	PktCount  *ebpf.Map `ebpf:"pkt_count"`
-	PktSize   *ebpf.Map `ebpf:"pkt_size"`
+	PktCount   *ebpf.Map `ebpf:"pkt_count"`
+	PktSize    *ebpf.Map `ebpf:"pkt_size"`
+	SrcDataLen *ebpf.Map `ebpf:"src_data_len"`
 }
 
 func (m *pkt_counterMaps) Close() error {
 	return _Pkt_counterClose(
-		m.Ipv4Count,
 		m.PktCount,
 		m.PktSize,
+		m.SrcDataLen,
 	)
 }
 

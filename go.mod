@@ -1,6 +1,6 @@
 module github.com/HouzuoGuo/hello-ebpf
 
-go 1.21.4
+go 1.21.5
 
 require github.com/cilium/ebpf v0.12.3
 
